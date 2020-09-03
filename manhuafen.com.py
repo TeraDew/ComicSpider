@@ -27,7 +27,7 @@ def highLightElement(driver, element):
 
 def get_download_page_list(folder_name, page_number):
     downloaded_list = [int(os.path.splitext(x)[0])
-                       for x in os.listdir(folder_name)]
+                       for x in os.listdir(folder_name) if x[0] != '.']
     return [x for x in list(range(1, page_number+1)) if x not in downloaded_list]
 
 
@@ -89,7 +89,10 @@ def download_chapter(driver, folder_name):
 
 
 def download_page(driver, chapter_url, current_page_no, folder_name):
-    url = chapter_url+'?p='+str(current_page_no)
+    if current_page_no == 0:
+        url = chapter_url
+    else:
+        url = chapter_url+'?p='+str(current_page_no)
     # print(f'downloading page {current_page_no}')
     driver.get(url)
     locator = (By.ID, 'images')
@@ -99,35 +102,71 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
         # image = driver.find_element_by_id('images')
         image_src = image.find_element_by_tag_name('img')
         image_url = image_src.get_attribute('src')
-        urllib.request.urlretrieve(
-            image_url, os.path.join(folder_name, str(current_page_no)+'.jpg'))
+
+        if current_page_no == 0:
+            urllib.request.urlretrieve(
+                image_url, os.path.join(folder_name, str(current_page_no+1)+'.jpg'))
+            page_number = int(image.find_element_by_tag_name(
+                'p').text.split('/')[1].strip(')'))
+            return page_number
+        else:
+            urllib.request.urlretrieve(
+                image_url, os.path.join(folder_name, str(current_page_no)+'.jpg'))
     except:
         print(f'can not find image {current_page_no}')
         with open(os.path.join(folder_name, '.incomplete'), 'a') as f:
             f.write(current_page_no)
+        if current_page_no == 0:
+            page_number = int(image.find_element_by_tag_name(
+                'p').text.split('/')[1].strip(')'))
+            return page_number
 
 
-def list_lock(driver, chapter_url, download_list, folder_name, lock):
-    while download_list:
+def list_lock(driver, task_list, folder_name, lock):
+    '''
+    task_list = [chapter_url, current_page_no, folder_name]
+    '''
+    while task_list:
         lock.acquire()
-        current_page_no = download_list.pop(0)
-        print(f'{download_list} downloading...',end='\r')
-        # random.choice(range(len(download_list))))
+        chapter_url, current_page_no, folder_name = task_list.pop(-1)
+        if not os.path.exists(folder_name):
+            os.mkdir(folder_name)
         lock.release()
-        download_page(driver, chapter_url, current_page_no, folder_name)
-    if os.path.exists(os.path.join(folder_name,'.incomplete')) and not download_list:
-        os.remove(os.path.join(folder_name,'.incomplete'))
+        if not current_page_no:
+            page_number = download_page(
+                driver, chapter_url, current_page_no, folder_name)
+            with open(os.path.join(folder_name, '.incomplete'), 'w') as f:
+                f.write(str(page_number))
+            lock.acquire()
+            for i in range(2, page_number+1):
+                task_list.append([chapter_url, i, folder_name])
+            # random.choice(range(len(download_list))))
+            lock.release()
+        else:
+            download_page(driver, chapter_url, current_page_no, folder_name)
+            lock.acquire()
+            page_number = 0
+            if os.path.exists(os.path.join(folder_name, '.incomplete')):
+                with open(os.path.join(folder_name, '.incomplete'), 'r') as f:
+                    page_number = int(f.read())
+                if len([x for x in os.listdir(folder_name) if 'jpg' in x]) == page_number:
+                    os.rename(os.path.join(folder_name, '.incomplete'),
+                              os.path.join(folder_name, '.complete'))
+                    print(f'{folder_name} completed.')
+            lock.release()
+    #     download_page(driver, chapter_url, current_page_no, folder_name)
+    # if os.path.exists(os.path.join(folder_name, '.incomplete')) and not download_list:
+    #     os.remove(os.path.join(folder_name, '.incomplete'))
 
 
-def thred_download(driver_list, chapter_url, folder_name, page_number):
-    if not os.path.exists(folder_name):
-        os.mkdir(folder_name)
-    download_list = get_download_page_list(folder_name, page_number)
+def thred_download(driver_list, task_list):
+
+    # download_list = get_download_page_list(folder_name, page_number)
     lock = threading.Lock()
     threads = []
     for driver in driver_list:
         threads.append(threading.Thread(target=list_lock, args=(
-            driver, chapter_url, download_list, folder_name, lock)))
+            driver, task_list, folder_name, lock)))
     for td in threads:
         td.start()
     for td in threads:
@@ -164,6 +203,7 @@ if __name__ == "__main__":
     #     driver, 'https://www.manhuafen.com/comic/2252/457229.html', 4, '125话')
 
     url = 'https://www.manhuafen.com/comic/2252/'
+    url = 'https://www.manhuafen.com/comic/142/'
     driver = webdriver.Chrome()
     driver1 = webdriver.Chrome()
     driver2 = webdriver.Chrome()
@@ -179,18 +219,36 @@ if __name__ == "__main__":
     # for chapter in chapter_list:
     #     chapter.click()
     # chapter1 = chapter_list[1]
+    task_list = []
     for chapter in chapter_list:
-        folder_name = chapter.find_element_by_class_name('list_con_zj').text
+        chapter_name = chapter.find_element_by_class_name('list_con_zj')
+        folder_name = chapter_name.text
+        chapter_url = chapter_name.find_element_by_xpath(
+            '..').get_attribute('href')
         if os.path.exists(folder_name):
             if os.path.exists(os.path.join(folder_name, '.complete')):
+                print(f'{folder_name} completed.')
                 continue
             elif os.path.exists(os.path.join(folder_name, '.incomplete')):
-                chapter_url = chapter.get_attribute('href')
                 page_number = 0
                 with open(os.path.join(folder_name, '.incomplete'), 'r') as f:
                     page_number = int(f.read())
-                thred_download(thread_list, chapter_url,
-                               folder_name, page_number)
+                if page_number == len([x for x in os.listdir(folder_name) if 'jpg' in x]):
+                    os.rename(os.path.join(folder_name, '.incomplete'),
+                              os.path.join(folder_name, '.complete'))
+                    continue
+                download_page_list = get_download_page_list(
+                    folder_name, page_number)
+                for page_to_be_downloaded in download_page_list:
+                    task_list.append([
+                        chapter_url, page_to_be_downloaded, folder_name])
+            else:
+                task_list.append([chapter_url, 0, folder_name])
+        else:
+            task_list.append([chapter_url, 0, folder_name])
+    thred_download(thread_list, task_list)
+
+'''
         chapter.click()
         content_window = driver.current_window_handle
         all_handles = driver.window_handles
@@ -213,4 +271,4 @@ if __name__ == "__main__":
             print('can not find images')
         # print(driver.title)
         driver.close()
-        driver.switch_to.window(content_window)
+        driver.switch_to.window(content_window)'''

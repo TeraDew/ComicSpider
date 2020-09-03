@@ -2,9 +2,11 @@ from selenium import webdriver
 import time
 import urllib.request
 import os
+import threading
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+import random
 
 
 def write_image(url):
@@ -46,7 +48,6 @@ def download_chapter(driver, folder_name):
     if not download_page_list:
         return
 
-    
     for i in download_page_list:
         url = chapter_url+'?p='+str(i)
         driver.get(url)
@@ -60,6 +61,7 @@ def download_chapter(driver, folder_name):
                 image_url, os.path.join(folder_name, str(i)+'.jpg'))
         except:
             print('can not find image')
+
             '''
     while True:
         image = driver.find_element_by_id('images')
@@ -86,19 +88,109 @@ def download_chapter(driver, folder_name):
 '''
 
 
+def download_page(driver, chapter_url, current_page_no, folder_name):
+    url = chapter_url+'?p='+str(current_page_no)
+    # print(f'downloading page {current_page_no}')
+    driver.get(url)
+    locator = (By.ID, 'images')
+    try:
+        image = WebDriverWait(driver, 10, 0.4).until(
+            EC.presence_of_element_located(locator))
+        # image = driver.find_element_by_id('images')
+        image_src = image.find_element_by_tag_name('img')
+        image_url = image_src.get_attribute('src')
+        urllib.request.urlretrieve(
+            image_url, os.path.join(folder_name, str(current_page_no)+'.jpg'))
+    except:
+        print(f'can not find image {current_page_no}')
+        with open(os.path.join(folder_name, '.incomplete'), 'a') as f:
+            f.write(current_page_no)
+
+
+def list_lock(driver, chapter_url, download_list, folder_name, lock):
+    while download_list:
+        lock.acquire()
+        current_page_no = download_list.pop(0)
+        print(f'{download_list} downloading...',end='\r')
+        # random.choice(range(len(download_list))))
+        lock.release()
+        download_page(driver, chapter_url, current_page_no, folder_name)
+    if os.path.exists(os.path.join(folder_name,'.incomplete')) and not download_list:
+        os.remove(os.path.join(folder_name,'.incomplete'))
+
+
+def thred_download(driver_list, chapter_url, folder_name, page_number):
+    if not os.path.exists(folder_name):
+        os.mkdir(folder_name)
+    download_list = get_download_page_list(folder_name, page_number)
+    lock = threading.Lock()
+    threads = []
+    for driver in driver_list:
+        threads.append(threading.Thread(target=list_lock, args=(
+            driver, chapter_url, download_list, folder_name, lock)))
+    for td in threads:
+        td.start()
+    for td in threads:
+        td.join()
+    if os.path.exists(os.path.join(folder_name, '.incomplete')):
+        with open(os.path.join(folder_name, '.incomplete'), 'w') as f:
+            f.write(int(page_number))
+    else:
+        with open(os.path.join(folder_name, '.complete'), 'w') as f:
+            f.write('')
+    # t1 = threading.Thread(target=list_lock, args=(
+    #     driver1, chapter_url, download_list, folder_name, lock))
+    # t2 = threading.Thread(target=list_lock, args=(
+    #     driver2, chapter_url, download_list, folder_name, lock))
+    # t3 = threading.Thread(target=list_lock, args=(
+    #     driver3, chapter_url, download_list, folder_name, lock))
+    # t4 = threading.Thread(target=list_lock, args=(
+    #     driver4, chapter_url, download_list, folder_name, lock))
+
+    # t1.start()
+    # t2.start()
+    # t3.start()
+    # t4.start()
+    # t1.join()
+    # t2.join()
+    # t3.join()
+    # t4.join()
+
+
 if __name__ == "__main__":
+
+    # driver = webdriver.Chrome()
+    # download_page(
+    #     driver, 'https://www.manhuafen.com/comic/2252/457229.html', 4, '125话')
 
     url = 'https://www.manhuafen.com/comic/2252/'
     driver = webdriver.Chrome()
+    driver1 = webdriver.Chrome()
+    driver2 = webdriver.Chrome()
+    driver3 = webdriver.Chrome()
+    driver4 = webdriver.Chrome()
     # driver = webdriver.Firefox()
     driver.get(url)
     chapter_block = driver.find_element_by_id('chapter-list-1')
     chapter_list = chapter_block.find_elements_by_tag_name('li')
+
+    thread_list = [driver1, driver2, driver3, driver4]
+
     # for chapter in chapter_list:
     #     chapter.click()
     # chapter1 = chapter_list[1]
     for chapter in chapter_list:
         folder_name = chapter.find_element_by_class_name('list_con_zj').text
+        if os.path.exists(folder_name):
+            if os.path.exists(os.path.join(folder_name, '.complete')):
+                continue
+            elif os.path.exists(os.path.join(folder_name, '.incomplete')):
+                chapter_url = chapter.get_attribute('href')
+                page_number = 0
+                with open(os.path.join(folder_name, '.incomplete'), 'r') as f:
+                    page_number = int(f.read())
+                thred_download(thread_list, chapter_url,
+                               folder_name, page_number)
         chapter.click()
         content_window = driver.current_window_handle
         all_handles = driver.window_handles
@@ -110,10 +202,13 @@ if __name__ == "__main__":
 
         locator = (By.ID, 'images')
         try:
-            ele = WebDriverWait(driver, 20).until(
+            image = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located(locator))
+            page_number = int(image.find_element_by_tag_name(
+                'p').text.split('/')[1].strip(')'))
             print(driver.title)
-            download_chapter(driver, folder_name)
+            chapter_url = driver.current_url
+            thred_download(thread_list, chapter_url, folder_name, page_number)
         except:
             print('can not find images')
         # print(driver.title)

@@ -7,17 +7,9 @@ import threading
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import WebDriverException,TimeoutException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 from urllib.error import HTTPError
 import random
-
-
-def write_image(url):
-    pass
-
-
-def open_chapter(url, driver):
-    driver.get(url)
 
 
 def highLightElement(driver, element):
@@ -34,49 +26,17 @@ def get_download_page_list(folder_name, page_number):
     return [x for x in list(range(1, page_number+1)) if x not in downloaded_list]
 
 
-def download_chapter(driver, folder_name):
-    locator = (By.ID, 'images')
-    chapter_url = driver.current_url
-    image = driver.find_element_by_id('images')
-    page_number = int(image.find_element_by_tag_name(
-        'p').text.split('/')[1].strip(')'))
-    if not os.path.exists(folder_name):
-        os.mkdir(folder_name)
-        image_src = image.find_element_by_tag_name('img')
-        # highLightElement(driver, image_src)
-        image_url = image_src.get_attribute('src')
-        urllib.request.urlretrieve(
-            image_url, os.path.join(folder_name, '1.jpg'))
-    download_page_list = get_download_page_list(folder_name, page_number)
-    if not download_page_list:
-        return
-
-    for i in download_page_list:
-        url = chapter_url+'?p='+str(i)
-        driver.get(url)
-        try:
-            image = WebDriverWait(driver, 20, 0.4).until(
-                EC.presence_of_element_located(locator))
-            # image = driver.find_element_by_id('images')
-            image_src = image.find_element_by_tag_name('img')
-            image_url = image_src.get_attribute('src')
-            urllib.request.urlretrieve(
-                image_url, os.path.join(folder_name, str(i)+'.jpg'))
-        except:
-            print('can not find image')
-
-
 def download_page(driver, chapter_url, current_page_no, folder_name):
-    page_name=0
+    page_name = 0
     if current_page_no == 0:
         url = chapter_url
-        page_name=current_page_no+1
+        page_name = current_page_no+1
     else:
         url = chapter_url+'?p='+str(current_page_no)
-        page_name=current_page_no
-    # print(f'downloading page {current_page_no}')
+        page_name = current_page_no
     try:
-        print(f'downloading {folder_name} page {page_name}                ', end='\r')
+        print(
+            f'downloading {folder_name} page {page_name}                ', end='\r')
         driver.get(url)
     except TimeoutException:
         return
@@ -84,7 +44,6 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
     try:
         image = WebDriverWait(driver, 10, 0.4).until(
             EC.presence_of_element_located(locator))
-        # image = driver.find_element_by_id('images')
         image_src = image.find_element_by_tag_name('img')
         image_url = image_src.get_attribute('src')
 
@@ -93,7 +52,8 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
                 urllib.request.urlretrieve(
                     image_url, os.path.join(folder_name, str(page_name)+'.jpg'))
             except HTTPError:
-                print(f'failed to download {folder_name} page {page_name}      ')
+                print(
+                    f'failed to download {folder_name} page {page_name}      ')
                 return
 
             page_number = int(image.find_element_by_tag_name(
@@ -104,7 +64,8 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
                 urllib.request.urlretrieve(
                     image_url, os.path.join(folder_name, str(page_name)+'.jpg'))
             except HTTPError:
-                print(f'failed to download {folder_name} page {page_name}      ')
+                print(
+                    f'failed to download {folder_name} page {page_name}      ')
                 return
     except:
         print(f'can not find image {current_page_no}')
@@ -131,7 +92,7 @@ def list_lock(driver, task_list, folder_name, lock):
                 driver, chapter_url, current_page_no, folder_name)
             if page_number:
                 with open(os.path.join(folder_name, '.incomplete'), 'w') as f:
-                   f.write(str(page_number))
+                    f.write(str(page_number))
             lock.acquire()
             for i in range(2, page_number+1):
                 task_list.append([chapter_url, i, folder_name])
@@ -152,8 +113,6 @@ def list_lock(driver, task_list, folder_name, lock):
 
 
 def thred_download(driver_list, task_list):
-
-    # download_list = get_download_page_list(folder_name, page_number)
     lock = threading.Lock()
     threads = []
     for driver in driver_list:
@@ -173,37 +132,30 @@ def thred_download(driver_list, task_list):
 
 if __name__ == "__main__":
 
-    # driver = webdriver.Chrome()
-    # download_page(
-    #     driver, 'https://www.manhuafen.com/comic/2252/457229.html', 4, '125话')
-
-    url = 'https://www.manhuafen.com/comic/2252/'
-    url = 'https://www.manhuafen.com/comic/142/'
-    url = input('输入漫画目录的url:')
+    url = input('输入漫画目录的url,形如 https://www.manhuafen.com/comic/1/:')
     if not url:
-        print('不知道去哪找？来这里看看：https://www.manhuafen.com/comic/142/')
+        print('不知道去哪找？来这里看看：https://www.manhuafen.com/')
         sys.exit(0)
     try:
         browser = int(input('用什么浏览器?\n，chrome请按0，🦊火狐请按1，默认用chrome:'))
     except ValueError:
-        browser=0
+        browser = 0
     try:
         driver_number = int(input('输入线程数,默认为2线程:'))
     except ValueError:
-        driver_number=2
+        driver_number = 2
     wd = 0
     if browser:
         wd = webdriver.Firefox
     else:
         wd = webdriver.Chrome
     try:
-        print('processing content...                       ',end='\r')
+        print('processing content...                       ', end='\r')
         driver = wd()
     except WebDriverException:
         print('没有装驱动，请阅读说明书')
         sys.exit(0)
 
-    # driver = webdriver.Firefox()
     driver.get(url)
     comic_name = driver.title.split(
         '-')[0] if len(driver.title.split('-')) > 1 else driver.title
@@ -212,9 +164,6 @@ if __name__ == "__main__":
     chapter_block = driver.find_element_by_id('chapter-list-1')
     chapter_list = chapter_block.find_elements_by_tag_name('li')
 
-    # for chapter in chapter_list:
-    #     chapter.click()
-    # chapter1 = chapter_list[1]
     task_list = []
     for chapter in chapter_list:
         chapter_name = chapter.find_element_by_class_name('list_con_zj')
@@ -243,7 +192,7 @@ if __name__ == "__main__":
         else:
             task_list.append([chapter_url, 0, folder_name])
     driver.quit()
-    print('content processing complete, downloading begin...       ',end='\r')
+    print('content processing complete, downloading begin...       ', end='\r')
     driver_list = []
     for i in range(driver_number):
         driver_list.append(wd())

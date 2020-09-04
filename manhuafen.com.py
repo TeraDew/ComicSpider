@@ -39,7 +39,8 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
             f'downloading {folder_name} page {page_name}                ', end='\r')
         driver.get(url)
     except TimeoutException:
-        return
+        print(f'failed to download {folder_name} page {page_name}      ')
+        return -1
     locator = (By.ID, 'images')
     try:
         image = WebDriverWait(driver, 10, 0.4).until(
@@ -54,7 +55,7 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
             except HTTPError:
                 print(
                     f'failed to download {folder_name} page {page_name}      ')
-                return
+                return -1
 
             page_number = int(image.find_element_by_tag_name(
                 'p').text.split('/')[1].strip(')'))
@@ -66,7 +67,7 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
             except HTTPError:
                 print(
                     f'failed to download {folder_name} page {page_name}      ')
-                return
+                return -1
     except:
         print(f'can not find image {current_page_no}')
         with open(os.path.join(folder_name, '.incomplete'), 'a') as f:
@@ -77,10 +78,11 @@ def download_page(driver, chapter_url, current_page_no, folder_name):
             return page_number
 
 
-def list_lock(driver, task_list, folder_name, lock):
+def list_lock(driver, task_list, lock, uncomplete_flag):
     '''
     task_list = [chapter_url, current_page_no, folder_name]
     '''
+    # if fail to download some page, uncomplete_flag=-1
     while task_list:
         lock.acquire()
         chapter_url, current_page_no, folder_name = task_list.pop(-1)
@@ -90,6 +92,9 @@ def list_lock(driver, task_list, folder_name, lock):
         if not current_page_no:
             page_number = download_page(
                 driver, chapter_url, current_page_no, folder_name)
+            if page_number == -1:
+                uncomplete_flag = page_number
+                continue
             if page_number:
                 with open(os.path.join(folder_name, '.incomplete'), 'w') as f:
                     f.write(str(page_number))
@@ -99,7 +104,8 @@ def list_lock(driver, task_list, folder_name, lock):
             # random.choice(range(len(download_list))))
             lock.release()
         else:
-            download_page(driver, chapter_url, current_page_no, folder_name)
+            uncomplete_flag = download_page(
+                driver, chapter_url, current_page_no, folder_name)
             lock.acquire()
             page_number = 0
             if os.path.exists(os.path.join(folder_name, '.incomplete')):
@@ -115,40 +121,20 @@ def list_lock(driver, task_list, folder_name, lock):
 def thred_download(driver_list, task_list):
     lock = threading.Lock()
     threads = []
+    uncomplete_flag = 0
     for driver in driver_list:
         threads.append(threading.Thread(target=list_lock, args=(
-            driver, task_list, folder_name, lock)))
+            driver, task_list,  lock, uncomplete_flag)))
     for td in threads:
         td.start()
     for td in threads:
         td.join()
-    if os.path.exists(os.path.join(folder_name, '.incomplete')):
-        with open(os.path.join(folder_name, '.incomplete'), 'w') as f:
-            f.write(int(page_number))
-    else:
-        with open(os.path.join(folder_name, '.complete'), 'w') as f:
-            f.write('')
 
 
-if __name__ == "__main__":
+    return uncomplete_flag
 
-    url = input('输入漫画目录的url,形如 https://www.manhuafen.com/comic/1/:')
-    if not url:
-        print('不知道去哪找？来这里看看：https://www.manhuafen.com/')
-        sys.exit(0)
-    try:
-        browser = int(input('用什么浏览器?\n，chrome请按0，🦊火狐请按1，默认用chrome:'))
-    except ValueError:
-        browser = 0
-    try:
-        driver_number = int(input('输入线程数,默认为2线程:'))
-    except ValueError:
-        driver_number = 2
-    wd = 0
-    if browser:
-        wd = webdriver.Firefox
-    else:
-        wd = webdriver.Chrome
+
+def get_content(url, wd):
     try:
         print('processing content...                       ', end='\r')
         driver = wd()
@@ -193,7 +179,40 @@ if __name__ == "__main__":
             task_list.append([chapter_url, 0, folder_name])
     driver.quit()
     print('content processing complete, downloading begin...       ', end='\r')
+    return task_list
+
+
+if __name__ == "__main__":
+
+    url = input('输入漫画目录的url,形如 https://www.manhuafen.com/comic/1/:')
+    if not url:
+        print('不知道去哪找？来这里看看：https://www.manhuafen.com/')
+        sys.exit(0)
+    try:
+        browser = int(input('用什么浏览器?\n，chrome请按0，🦊火狐请按1，默认用chrome:'))
+    except ValueError:
+        browser = 0
+    try:
+        driver_number = int(input('输入线程数,默认为2线程:'))
+    except ValueError:
+        driver_number = 2
+    wd = 0
+    if browser:
+        wd = webdriver.Firefox
+    else:
+        wd = webdriver.Chrome
+
     driver_list = []
     for i in range(driver_number):
         driver_list.append(wd())
-    thred_download(driver_list, task_list)
+
+    while True:
+        task_list = get_content(url, wd)
+        uncomplete_flag = thred_download(driver_list, task_list)
+        if uncomplete_flag == 0:
+            break
+
+    for driver in driver_list:
+        driver.quit()
+
+    print('download complete.')

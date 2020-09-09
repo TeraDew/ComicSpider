@@ -130,7 +130,6 @@ def thred_download(driver_list, task_list):
     for td in threads:
         td.join()
 
-
     return uncomplete_flag
 
 
@@ -188,10 +187,16 @@ if __name__ == "__main__":
     if not url:
         print('不知道去哪找？来这里看看：https://www.manhuafen.com/')
         sys.exit(0)
+    if url.isdigit():
+        url = 'https://www.manhuafen.com/comic/'+url
     try:
-        browser = int(input('用什么浏览器?\n，chrome请按0，🦊火狐请按1，默认用chrome:'))
+        browser = int(input('用什么浏览器?\nChrome请按0，🦊火狐请按1，默认用Chrome:'))
     except ValueError:
         browser = 0
+    try:
+        download_mod = int(input('全部下载请按0，单回下载请按1，默认全集下载:'))
+    except ValueError:
+        download_mod = 0
     try:
         driver_number = int(input('输入线程数,默认为2线程:'))
     except ValueError:
@@ -207,7 +212,20 @@ if __name__ == "__main__":
         driver_list.append(wd())
 
     while True:
-        task_list = get_content(url, wd)
+        full_task_list = get_content(url, wd)
+        if download_mod == 0:
+            task_list = full_task_list
+        elif download_mod == 1:
+            for idx, task in enumerate(full_task_list):
+                print(f'序号:\t{idx}:\t{task[2]}')
+            try:
+                task_idx = int(input('输入下载序号，默认下载最新回:'))
+            except ValueError:
+                task_idx = 0
+
+            task_list = [x for x in full_task_list if x[2]
+                         == full_task_list[task_idx][2]]
+
         uncomplete_flag = thred_download(driver_list, task_list)
         if uncomplete_flag == 0:
             break

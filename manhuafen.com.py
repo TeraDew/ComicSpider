@@ -22,8 +22,9 @@ def highLightElement(driver, element):
                           element, "background:green ;border:2px solid red;")
 
 
-def image_retrieve(src_list, lock):
+def image_retrieve(src_list, lock, sleep_lock, sleep_time):
     while(src_list):
+        sleep_time = 1
         lock.acquire()
         folder_name, image_src, idx = src_list.pop(-1)
         lock.release()
@@ -37,16 +38,29 @@ def image_retrieve(src_list, lock):
         except HTTPError:
             print(
                 f'failed to download {folder_name} page {idx}      ')
-            # return [folder_name, image_src, idx]
+    if(sleep_time < 129):
+
+        # return [folder_name, image_src, idx]
+        # if flag:
+        sleep_lock.acquire()
+        sleep_time *= 2
+        print(
+            f'download thread sleep for {sleep_time} seconds         ', end='\r')
+        time.sleep(sleep_time)
+        sleep_lock.release()
+        image_retrieve(src_list, lock, sleep_lock, sleep_time)
 
 
 def get_chapter_image_list(driver, chapter_url, folder_name):
     if os.path.exists(folder_name):
-        if os.path.exists(os.path.join(folder_name, 'complete')):
+        if os.path.exists(os.path.join(folder_name, '.complete')):
             return
         else:
-            downloaded_list = [int(os.path.splitext(x)[0])
-                               for x in os.listdir(folder_name) if x[0] != '.']
+            try:
+                downloaded_list = [int(os.path.splitext(x)[0])
+                                   for x in os.listdir(folder_name) if x[0] != '.']
+            except:
+                print(folder_name)
             with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
                 src_list = []
                 for line in f:
@@ -106,26 +120,35 @@ def retrieve_list_lock(driver, task_list, lock, src_list):
 
 def thred_get_src(driver_list, task_list):
     lock = threading.Lock()
+    sleep_lock = threading.Lock()
+    download_thread_number = 4
+    initial_sleep_time = 1
     threads = []
     src_list = []
     for driver in driver_list:
         threads.append(threading.Thread(target=retrieve_list_lock, args=(
             driver, task_list,  lock, src_list)))
+
+    for i in range(download_thread_number):
+        threads.append(threading.Thread(
+            target=image_retrieve, args=(src_list, lock, sleep_lock, initial_sleep_time)))
     for td in threads:
         td.start()
     for td in threads:
         td.join()
 
+    # thread_image_retrieve(src_list, threads)
+
     return src_list
 
 
-def thread_image_retrieve(src_list):
+def thread_image_retrieve(src_list, other_threads):
     thread_number = 4
     lock = threading.Lock()
     threads = []
     for i in range(thread_number):
         threads.append(threading.Thread(
-            target=image_retrieve, args=(src_list, lock)))
+            target=image_retrieve, args=(src_list, lock, other_threads)))
 
     for td in threads:
         td.start()
@@ -206,4 +229,4 @@ def user_interface():
 if __name__ == "__main__":
 
     src_list = user_interface()
-    thread_image_retrieve(src_list)
+    # thread_image_retrieve(src_list)

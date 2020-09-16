@@ -166,6 +166,7 @@ def user_interface():
         browser = 0
     try:
         download_mod = int(input('全部下载请按0，单回下载请按1，默认全集下载:'))
+        download_mod = 1 if download_mod else 0
     except ValueError:
         download_mod = 0
     try:
@@ -200,8 +201,6 @@ def user_interface():
     for driver in driver_list:
         driver.quit()
     return src_list
-
-    print('download complete.')
 
 
 if __name__ == "__main__":

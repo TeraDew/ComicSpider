@@ -23,8 +23,8 @@ def highLightElement(driver, element):
 
 
 def image_retrieve(src_list, lock, sleep_lock, sleep_time):
-    while(src_list):
-        sleep_time = 1
+    sleep_limit = 129
+    while(src_list and sleep_time < sleep_limit):
         lock.acquire()
         folder_name, image_src, idx = src_list.pop(-1)
         lock.release()
@@ -35,13 +35,18 @@ def image_retrieve(src_list, lock, sleep_lock, sleep_time):
                 image_src = 'http'+image_src.split('http')[-1]
             urllib.request.urlretrieve(
                 image_src, os.path.join(folder_name, str(idx)+'.jpg'))
+            sleep_time = 1
         except HTTPError:
             print(
                 f'failed to download {folder_name} page {idx}      ')
-    if(sleep_time < 129):
-
-        # return [folder_name, image_src, idx]
-        # if flag:
+            sleep_lock.acquire()
+            sleep_time *= 2
+            print(
+                f'download thread sleep for {sleep_time} seconds         ', end='\r')
+            time.sleep(sleep_time)
+            src_list.append([folder_name, image_src, idx])
+            sleep_lock.release()
+    if((not src_list) and sleep_time < sleep_limit):
         sleep_lock.acquire()
         sleep_time *= 2
         print(
@@ -49,6 +54,10 @@ def image_retrieve(src_list, lock, sleep_lock, sleep_time):
         time.sleep(sleep_time)
         sleep_lock.release()
         image_retrieve(src_list, lock, sleep_lock, sleep_time)
+    elif(sleep_time > sleep_limit):
+        err_msg = '\n------------------------\nfail to download these pages: \n'+'\n'.join(
+            [f'{folder_name} page {idx}' for folder_name, image_src, idx in src_list])+'\nterminationg...'
+        print(err_msg)
 
 
 def get_chapter_image_list(driver, chapter_url, folder_name):
@@ -88,7 +97,7 @@ def get_chapter_image_list(driver, chapter_url, folder_name):
                             for idx, x in enumerate(image_list, 1)]
             if not os.path.exists(folder_name):
                 os.mkdir(folder_name)
-                with open(os.path.join(folder_name, '.incomplete'), 'a') as f:
+                with open(os.path.join(folder_name, '.incomplete'), 'a', encoding='utf-8') as f:
                     for src in src_list:
                         f.write(f'{src[0]}\t{src[1]}\t{src[2]}\n')
             return src_list

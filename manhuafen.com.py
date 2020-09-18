@@ -47,45 +47,7 @@ class Consumer(threading.Thread):
                 break
             else:
                 time.sleep(0.5)
-
-
-def image_retrieve(src_list, lock, sleep_lock, sleep_time, parsing_flag):
-    sleep_limit = 65
-    while(src_list and sleep_time < sleep_limit):
-        lock.acquire()
-        folder_name, image_src, idx = src_list.pop(-1)
-        lock.release()
-        try:
-            print(
-                f'downloading {folder_name} page {idx}                ', end='\r')
-            urllib.request.urlretrieve(
-                image_src, os.path.join(folder_name, str(idx)+'.jpg'))
-            sleep_time = 1
-        except HTTPError:
-            print(
-                f'failed to download {folder_name} page {idx}      ')
-            sleep_lock.acquire()
-            sleep_time *= 2
-            print(
-                f'download thread sleep for {sleep_time} seconds         ', end='\r')
-            time.sleep(sleep_time)
-            src_list.append([folder_name, image_src, idx])
-            sleep_lock.release()
-        except urllib.error.ContentTooShortError as err:
-            print(f'failed to download {folder_name} page {idx} for {err}')
-
-    if((not src_list) and sleep_time < sleep_limit and parsing_flag):
-        sleep_lock.acquire()
-        sleep_time *= 2
-        print(
-            f'download thread sleep for {sleep_time} seconds waiting for task  ', end='\r')
-        time.sleep(sleep_time)
-        sleep_lock.release()
-        image_retrieve(src_list, lock, sleep_lock, sleep_time, parsing_flag)
-    elif(sleep_time > sleep_limit):
-        err_msg = '\n------------------------\nfail to download these pages: \n'+'\n'.join(
-            [f'{folder_name} page {idx}' for folder_name, image_src, idx in src_list])+'\nterminationg...'
-        print(err_msg)
+        print(f'{self.getName()} download compelte.')
 
 
 def get_local_download_list(folder_name):
@@ -95,17 +57,22 @@ def get_local_download_list(folder_name):
         try:
             downloaded_list = [int(os.path.splitext(x)[0])
                                for x in os.listdir(folder_name) if x[0] != '.']
-        except:
-            print(folder_name)
-        with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
-            src_list = []
-            for line in f:
-                folder_name = line.strip('\n').split('\t')[0]
-                image_url = line.strip('\n').split('\t')[1]
-                page_no = int(line.strip('\n').split('\t')[2])
-                if page_no not in downloaded_list:
-                    src_list.append([folder_name, image_url, page_no])
-        return src_list
+            if downloaded_list:
+                src_list = []
+                with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
+
+                    for line in f:
+                        folder_name = line.strip('\n').split('\t')[0]
+                        image_url = line.strip('\n').split('\t')[1]
+                        page_no = int(line.strip('\n').split('\t')[2])
+                        if page_no not in downloaded_list:
+                            src_list.append([folder_name, image_url, page_no])
+                if not src_list:
+                    print(f'{folder_name} download complete.')
+                return src_list
+        except ValueError:
+            print(f'error occured in{folder_name}.')
+            return []
 
 
 class OnlineProducer(threading.Thread):
@@ -118,46 +85,60 @@ class OnlineProducer(threading.Thread):
     def run(self):
         while True:
             task_val = self.task_queue.get()
+            if (self.task_queue.qsize() == 1):
+                temp_task = self.task_queue.get()
+                if (temp_task == None):
+                    self.task_queue.put(None)
+                    self.data.put(None)
+                else:
+                    self.task_queue.put(temp_task)
             if task_val:
                 chapter_url, current_page_no, folder_name = task_val
-                self.driver.get(chapter_url)
-                locator = (By.ID, 'images')
-                try:
-                    image = WebDriverWait(self.driver, 10, 0.4).until(
-                        EC.presence_of_element_located(locator))
-                    image_src = image.find_element_by_tag_name('img')
-                    image_url = image_src.get_attribute('src')
-                    image_list = self.driver.execute_script(
-                        "return chapterImages")
-                    src_list = []
-                    for idx, page_image_url in enumerate(image_list, 1):
-                        if urlparse(page_image_url).netloc:
-                            src_list.append([folder_name,
-                                             image_url.split(urlparse(page_image_url).netloc)[
-                                                 0]+urlparse(page_image_url).netloc+page_image_url.split(urlparse(page_image_url).netloc)[-1],
-                                             idx])
-                        else:
-                            src_list.append([folder_name,
-                                             os.path.join(os.path.split(image_url)[0],
-                                                          page_image_url), idx])
-
-                    if not os.path.exists(folder_name):
-                        os.mkdir(folder_name)
-                        with open(os.path.join(folder_name, '.incomplete'), 'a', encoding='utf-8') as f:
-                            for src in src_list:
-                                f.write(f'{src[0]}\t{src[1]}\t{src[2]}\n')
+                if os.path.exists(folder_name):
+                    src_list = get_local_download_list(folder_name)
                     for src_download in src_list:
                         self.data.put(src_download)
-                except:
-                    print(f'{folder_name} download complete.')
-                    return
-                pass
+
+                else:
+                    self.driver.get(chapter_url)
+                    locator = (By.ID, 'images')
+                    try:
+                        image = WebDriverWait(self.driver, 10, 0.4).until(
+                            EC.presence_of_element_located(locator))
+                        image_src = image.find_element_by_tag_name('img')
+                        image_url = image_src.get_attribute('src')
+                        image_list = self.driver.execute_script(
+                            "return chapterImages")
+                        src_list = []
+                        for idx, page_image_url in enumerate(image_list, 1):
+                            if urlparse(page_image_url).netloc:
+                                src_list.append([folder_name,
+                                                 image_url.split(urlparse(page_image_url).netloc)[
+                                                     0]+urlparse(page_image_url).netloc+page_image_url.split(urlparse(page_image_url).netloc)[-1],
+                                                 idx])
+                            else:
+                                src_list.append([folder_name,
+                                                 os.path.join(os.path.split(image_url)[0],
+                                                              page_image_url), idx])
+
+                        if not os.path.exists(folder_name):
+                            os.mkdir(folder_name)
+                            with open(os.path.join(folder_name, '.incomplete'), 'a', encoding='utf-8') as f:
+                                for src in src_list:
+                                    f.write(f'{src[0]}\t{src[1]}\t{src[2]}\n')
+                        for src_download in src_list:
+                            self.data.put(src_download)
+
+                    except:
+                        print(f'{folder_name} download complete.')
+                        return
+
             elif(task_val == None):
                 self.task_queue.put(task_val)
                 break
             else:
                 time.sleep(0.5)
-        self.data.put(None)
+        self.driver.quit()
 
 
 class LocalProducer(threading.Thread):
@@ -172,8 +153,9 @@ class LocalProducer(threading.Thread):
             if task_val:
                 chapter_url, current_page_no, folder_name = task_val
                 src_list = get_local_download_list(folder_name)
-                for src_download in src_list:
-                    self.data.put(src_download)
+                if src_list:
+                    for src_download in src_list:
+                        self.data.put(src_download)
             elif(task_val == None):
                 self.task_queue.put(task_val)
                 break
@@ -210,66 +192,6 @@ class TaskProducer(threading.Thread):
                 self.offline_q.put([chapter_url, 0, folder_name])
         self.oneline_q.put(None)
         self.offline_q.put(None)
-
-
-def get_chapter_image_list(driver, chapter_url, folder_name):
-    if os.path.exists(folder_name):
-        return get_local_download_list(folder_name)
-    else:
-        driver.get(chapter_url)
-        locator = (By.ID, 'images')
-
-        try:
-            image = WebDriverWait(driver, 10, 0.4).until(
-                EC.presence_of_element_located(locator))
-            image_src = image.find_element_by_tag_name('img')
-            image_url = image_src.get_attribute('src')
-            image_list = driver.execute_script("return chapterImages")
-            src_list = []
-            for idx, page_image_url in enumerate(image_list, 1):
-                if urlparse(page_image_url).netloc:
-                    src_list.append([folder_name,
-                                     image_url.split(urlparse(page_image_url).netloc)[
-                                         0]+urlparse(page_image_url).netloc+page_image_url.split(urlparse(page_image_url).netloc)[-1],
-                                     idx])
-                else:
-                    src_list.append([folder_name,
-                                     os.path.join(os.path.split(image_url)[0],
-                                                  page_image_url), idx])
-
-            if not os.path.exists(folder_name):
-                os.mkdir(folder_name)
-                with open(os.path.join(folder_name, '.incomplete'), 'a', encoding='utf-8') as f:
-                    for src in src_list:
-                        f.write(f'{src[0]}\t{src[1]}\t{src[2]}\n')
-            return src_list
-        except:
-            print(f'{folder_name} download complete.')
-            return
-
-
-def retrieve_list_lock(driver, task_list, lock, src_list, parsing_flag):
-
-    while task_list:
-        lock.acquire()
-        chapter_url, current_page_no, folder_name = task_list.pop(-1)
-
-        lock.release()
-
-        if not current_page_no:
-            chapter_src_list = get_chapter_image_list(
-                driver, chapter_url, folder_name)
-            if chapter_src_list:
-                lock.acquire()
-                src_list += chapter_src_list
-                lock.release()
-            else:
-                print(f'{folder_name} download complete.')
-
-        else:
-            pass
-    if not task_list:
-        parsing_flag = False
 
 
 def thred_get_src(driver_number, task_list, wd):
@@ -310,20 +232,6 @@ def thred_get_src(driver_number, task_list, wd):
             driver.quit()
 
     return src_list
-
-
-def thread_image_retrieve(src_list, other_threads):
-    thread_number = 4
-    lock = threading.Lock()
-    threads = []
-    for i in range(thread_number):
-        threads.append(threading.Thread(
-            target=image_retrieve, args=(src_list, lock, other_threads)))
-
-    for td in threads:
-        td.start()
-    for td in threads:
-        td.join()
 
 
 def get_content_urllib(url):
@@ -392,38 +300,71 @@ def user_interface():
     return src_list
 
 
-def main():
+def main(task_list, driver_number=2, url='https://www.manhuafen.com/comic/856',  download_range=(-62, -61)):
     online_q = queue.Queue()
     offline_q = queue.Queue()
     src_q = queue.Queue()
 
-    driver_number = 1
-    driver_list = []
-    wd = webdriver.Firefox
+    ch_options = webdriver.ChromeOptions()
+    ch_options.add_argument('-headless')
+    ch_options.add_argument('blink-settings=imagesEnabled=false')
+    ff_options = webdriver.FirefoxOptions()
+    ff_options.add_argument('-headless')
+    ff_options.set_preference('permissions.default.image', 2)
+
     threads = []
 
-    url = 'https://www.manhuafen.com/comic/2252'
-    task_list = get_content_urllib(url)
+    if not task_list:
+        temp_list = get_content_urllib(url)
+
+    range_start, range_end = download_range
+    if range_start < 0:
+        range_start = len(temp_list)+range_start
+    if 0 >= range_end:
+        range_end = len(temp_list)+range_end
+    task_list = [x for idx, x in enumerate(
+        temp_list, 1) if range_end >= idx >= range_start]
+
+    if not task_list:
+        print('input invalid range.')
+        return
+
     unparsed_chapter_list = [[chapter_url, idx, folder_name] for chapter_url,
                              idx, folder_name in task_list if not os.path.exists(folder_name)]
-
     if unparsed_chapter_list:
         driver_number = driver_number if driver_number < len(
             unparsed_chapter_list) else len(unparsed_chapter_list)
-        for i in range(driver_number):
-            driver_list.append(wd())
-        for idx, chapter in enumerate(unparsed_chapter_list):
-            online_q.put(chapter)
-            if idx > 3:
-                break
+
+        for task in task_list:
+            online_q.put(task)
+
         online_q.put(None)
-        for idx, driver in enumerate(driver_list):
+        for idx in range(driver_number):
             name = 'OnlineProducer'+str(idx+1)
-            threads.append(OnlineProducer(name, src_q, online_q, driver))
-        threads.append(Consumer('Consumer1', src_q))
-        threads.append(Consumer('Consumer2', src_q))
-        threads.append(Consumer('Consumer3', src_q))
-        threads.append(Consumer('Consumer4', src_q))
+            try:
+                driver = webdriver.Firefox(options=ff_options)
+                threads.append(OnlineProducer(
+                    name, src_q, online_q, driver))
+
+            except WebDriverException:
+                try:
+                    driver = webdriver.Chrome(options=ch_options)
+                    threads.append(OnlineProducer(
+                        name, src_q, online_q, driver))
+
+                except WebDriverException:
+                    print('Please install driver properly')
+
+    else:
+        for task in task_list:
+            offline_q.put(task)
+        offline_q.put(None)
+        threads.append(LocalProducer('LoalProducer', src_q, offline_q))
+
+    threads.append(Consumer('Consumer1', src_q))
+    threads.append(Consumer('Consumer2', src_q))
+    threads.append(Consumer('Consumer3', src_q))
+    threads.append(Consumer('Consumer4', src_q))
 
     for td in threads:
         td.start()
@@ -432,14 +373,15 @@ def main():
 
     if not src_q.empty():
         while True:
-            val = online_q.get()
+            val = src_q.get()
             if val:
                 print(val)
             elif (val == None):
+                print('download complete.')
                 break
 
 
 if __name__ == "__main__":
 
     # src_list = user_interface()
-    main()
+    main([])

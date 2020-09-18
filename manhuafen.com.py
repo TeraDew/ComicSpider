@@ -57,49 +57,75 @@ def get_local_download_list(folder_name):
         try:
             downloaded_list = [int(os.path.splitext(x)[0])
                                for x in os.listdir(folder_name) if x[0] != '.']
-            if downloaded_list:
-                src_list = []
-                with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
+            src_list = []
+            with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
+                for line in f:
+                    folder_name = line.strip('\n').split('\t')[0]
+                    image_url = line.strip('\n').split('\t')[1]
+                    page_no = int(line.strip('\n').split('\t')[2])
+                    if page_no not in downloaded_list:
+                        src_list.append([folder_name, image_url, page_no])
+            if not src_list:
+                print(f'{folder_name} download complete.')
+            return src_list
 
-                    for line in f:
-                        folder_name = line.strip('\n').split('\t')[0]
-                        image_url = line.strip('\n').split('\t')[1]
-                        page_no = int(line.strip('\n').split('\t')[2])
-                        if page_no not in downloaded_list:
-                            src_list.append([folder_name, image_url, page_no])
-                if not src_list:
-                    print(f'{folder_name} download complete.')
-                return src_list
         except ValueError:
             print(f'error occured in{folder_name}.')
             return []
 
 
-class OnlineProducer(threading.Thread):
-    def __init__(self, name, queue, task_queue, driver):
+class LocalProducer(threading.Thread):
+    def __init__(self, name, queue, task_queue):
         threading.Thread.__init__(self, name=name)
         self.data = queue
-        self.driver = driver
         self.task_queue = task_queue
 
     def run(self):
         while True:
             task_val = self.task_queue.get()
-            if (self.task_queue.qsize() == 1):
-                temp_task = self.task_queue.get()
-                if (temp_task == None):
-                    self.task_queue.put(None)
-                    self.data.put(None)
-                else:
-                    self.task_queue.put(temp_task)
             if task_val:
                 chapter_url, current_page_no, folder_name = task_val
-                if os.path.exists(folder_name):
-                    src_list = get_local_download_list(folder_name)
-                    for src_download in src_list:
-                        self.data.put(src_download)
+                self.add_local_download_list(folder_name)
+                self.add_stop_flag()
+            elif(task_val == None):
+                self.task_queue.put(task_val)
+                break
+            else:
+                time.sleep(0.5)
 
-                else:
+        print(f'Page parse complete')
+
+    def add_stop_flag(self):
+        if (self.task_queue.qsize() == 1):
+            temp_task = self.task_queue.get()
+            if (temp_task == None):
+                self.task_queue.put(None)
+                self.data.put(None)
+            else:
+                self.task_queue.put(temp_task)
+
+    def add_local_download_list(self, folder_name):
+        if os.path.exists(folder_name):
+            src_list = get_local_download_list(folder_name)
+            for src_download in src_list:
+                self.data.put(src_download)
+            return True
+        else:
+            return False
+
+
+class OnlineProducer(LocalProducer):
+    def __init__(self, name, queue, task_queue, driver):
+        LocalProducer.__init__(self, name, queue, task_queue)
+        self.driver = driver
+
+    def run(self):
+        while True:
+            task_val = self.task_queue.get()
+
+            if task_val:
+                chapter_url, current_page_no, folder_name = task_val
+                if not self.add_local_download_list(folder_name):
                     self.driver.get(chapter_url)
                     locator = (By.ID, 'images')
                     try:
@@ -132,37 +158,13 @@ class OnlineProducer(threading.Thread):
                     except:
                         print(f'{folder_name} download complete.')
                         return
-
+                    self.add_stop_flag()
             elif(task_val == None):
                 self.task_queue.put(task_val)
                 break
             else:
                 time.sleep(0.5)
         self.driver.quit()
-
-
-class LocalProducer(threading.Thread):
-    def __init__(self, name, queue, task_queue):
-        threading.Thread.__init__(self, name=name)
-        self.data = queue
-        self.task_queue = task_queue
-
-    def run(self):
-        while True:
-            task_val = self.task_queue.get()
-            if task_val:
-                chapter_url, current_page_no, folder_name = task_val
-                src_list = get_local_download_list(folder_name)
-                if src_list:
-                    for src_download in src_list:
-                        self.data.put(src_download)
-            elif(task_val == None):
-                self.task_queue.put(task_val)
-                break
-            else:
-                time.sleep(0.5)
-        self.data.put(None)
-        print(f'Page parse complete')
 
 
 class TaskProducer(threading.Thread):
@@ -192,46 +194,6 @@ class TaskProducer(threading.Thread):
                 self.offline_q.put([chapter_url, 0, folder_name])
         self.oneline_q.put(None)
         self.offline_q.put(None)
-
-
-def thred_get_src(driver_number, task_list, wd):
-
-    lock = threading.Lock()
-    sleep_lock = threading.Lock()
-    download_thread_number = 4
-    initial_sleep_time = 1
-    threads = []
-    src_list = []
-    driver_list = []
-    parsing_flag = True
-    unparsed_chapter_list = [[chapter_url, idx, folder_name] for chapter_url,
-                             idx, folder_name in task_list if not os.path.exists(folder_name)]
-    if unparsed_chapter_list:
-        driver_number = driver_number if driver_number < len(
-            unparsed_chapter_list) else len(unparsed_chapter_list)
-        for i in range(driver_number):
-            driver_list.append(wd())
-        for driver in driver_list:
-            threads.append(threading.Thread(target=retrieve_list_lock, args=(
-                driver, task_list,  lock, src_list, parsing_flag)))
-
-    else:
-        parsing_flag = False
-        for chapter_url, idx, folder_name in task_list:
-            src_list += get_local_download_list(folder_name)
-    for i in range(download_thread_number):
-        threads.append(threading.Thread(
-            target=image_retrieve, args=(src_list, lock, sleep_lock, initial_sleep_time, parsing_flag)))
-    for td in threads:
-        td.start()
-    for td in threads:
-        td.join()
-
-    if unparsed_chapter_list:
-        for driver in driver_list:
-            driver.quit()
-
-    return src_list
 
 
 def get_content_urllib(url):
@@ -300,7 +262,10 @@ def user_interface():
     return src_list
 
 
-def main(task_list, driver_number=2, url='https://www.manhuafen.com/comic/856',  download_range=(-62, -61)):
+def main(task_list,
+         driver_number=2,
+         url='https://www.manhuafen.com/comic/856',
+         download_range=(-62, -60)):
     online_q = queue.Queue()
     offline_q = queue.Queue()
     src_q = queue.Queue()

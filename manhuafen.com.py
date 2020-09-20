@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import WebDriverException, TimeoutException
 from urllib.error import HTTPError
+from stopwatch.stopwatch import stopwatch
 
 
 def highLightElement(driver, element):
@@ -31,7 +32,7 @@ class Consumer(threading.Thread):
             val = self.data.get()
             if val:
                 folder_name, image_src, idx = val
-                print(f'downloading {folder_name} page {idx}')
+                # print(f'downloading {folder_name} page {idx}')
                 try:
                     urllib.request.urlretrieve(image_src, os.path.join(
                         folder_name, str(idx)+'.jpg'))
@@ -117,6 +118,7 @@ class Producer(threading.Thread):
             os.mkdir(folder_name)
             return False
 
+    @stopwatch
     def initiate_driver(self):
         ch_options = webdriver.ChromeOptions()
         ch_options.add_argument('-headless')
@@ -140,6 +142,7 @@ class Producer(threading.Thread):
         if self.driver != None:
             self.driver.quit()
 
+    @stopwatch
     def add_online_download_list(self, chapter_url, folder_name):
         print(f'正在获取{folder_name}的页面...')
         self.driver.get(chapter_url)
@@ -176,6 +179,7 @@ class Producer(threading.Thread):
             os._exit(-1)
 
 
+@stopwatch
 def get_content_urllib(url):
     domain_url = 'https://www.manhuafen.com'
     print('parsing content...')
@@ -230,8 +234,9 @@ def user_interface():
     main(full_task_list, (task_start, task_end), url)
 
 
+@stopwatch
 def main(full_task_list,
-         download_range=(80, 88),
+         download_range=(90, 91),
          url='https://www.manhuafen.com/comic/39',
          producer_number=1
          ):
@@ -249,16 +254,11 @@ def main(full_task_list,
     if not task_list:
         print('input invalid range.')
         return
-    
+
     online_q = queue.Queue()
     src_q = queue.Queue()
 
     threads = []
-
-    unparsed_chapter_list = [[chapter_url, idx, folder_name] for chapter_url,
-                             idx, folder_name in task_list if not os.path.exists(folder_name)]
-    producer_number = producer_number if producer_number < len(
-        unparsed_chapter_list) and len(unparsed_chapter_list) > 0 else len(unparsed_chapter_list)
 
     for task in task_list:
         online_q.put(task)
@@ -289,5 +289,6 @@ def main(full_task_list,
 
 
 if __name__ == "__main__":
-
-    user_interface()
+    task_list = get_content_urllib(url='https://www.manhuafen.com/comic/39')
+    # user_interface()
+    main(task_list, (87, 93))

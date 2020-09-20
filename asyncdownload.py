@@ -9,9 +9,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import WebDriverException, TimeoutException
+from stopwatch.stopwatch import stopwatch
+import aiohttp
+import async_timeout
+import aiofiles
 
 
-async def initiate_bowser():
+def initiate_bowser():
     ch_options = webdriver.ChromeOptions()
     ch_options.add_argument('-headless')
     ch_options.add_argument('blink-settings=imagesEnabled=false')
@@ -33,31 +37,32 @@ async def initiate_bowser():
     return bowser
 
 
-def get_local_download_list(folder_name):
-    if os.path.exists(os.path.join(folder_name, '.complete')):
-        return
-    else:
-        try:
-            downloaded_list = [int(os.path.splitext(x)[0])
-                               for x in os.listdir(folder_name) if x[0] != '.']
-            src_list = []
-            with open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
-                for line in f:
-                    folder_name = line.strip('\n').split('\t')[0]
-                    image_url = line.strip('\n').split('\t')[1]
-                    page_no = int(line.strip('\n').split('\t')[2])
-                    if page_no not in downloaded_list:
-                        src_list.append([folder_name, image_url, page_no])
-            if not src_list:
-                print(f'{folder_name} download complete.')
-            return src_list
+async def get_local_download_list(folder_name, page_queue):
 
-        except ValueError:
-            print(f'error occured in{folder_name}.')
-            return []
+    try:
+        async with aiofiles.open(os.path.join(folder_name, '.incomplete'), 'r', encoding='utf-8') as f:
+            async for line in f:
+                folder_name = line.strip('\n').split('\t')[0]
+                image_url = line.strip('\n').split('\t')[1]
+                page_no = int(line.strip('\n').split('\t')[2])
+                try:
+                    async with aiofiles.open(os.path.join(folder_name, f'{page_no}.jpg')) as f:
+                        pass
+                    # print(f'{folder_name} page {page_no} downloaded.')
+                except FileNotFoundError:
+                    # src_list.append([folder_name, image_url, page_no])
+                    # print(f'adding {folder_name} {page_no}..')
+                    await page_queue.put([folder_name, image_url, page_no])
+        # if not src_list:
+        #     print(f'{folder_name} download complete.')
+        # return src_list
+
+    except ValueError:
+        print(f'error occured in{folder_name}.')
+        return []
 
 
-async def get_online_download_list(folder_name, chapter_url, browser):
+def get_online_download_list(folder_name, chapter_url, browser):
     try:
         os.mkdir(folder_name)
     except:
@@ -99,7 +104,30 @@ async def get_online_download_list(folder_name, chapter_url, browser):
     print(f'parsing {folder_name} complete.')
 
 
-async def download(page):
+async def fetch(session, url):
+    with async_timeout.timeout(10):
+        async with session.get(url) as response:
+            if response.status == 200:
+                return await response.read()
+            else:
+                return None
+
+
+async def aiodownload(page):
+    folder_name, image_src, idx = page
+    # print(f'downloading {folder_name} page {idx}')
+    async with aiohttp.ClientSession() as session:
+        image_file = await fetch(session, image_src)
+        if image_file != None:
+            async with aiofiles.open(os.path.join(
+                    folder_name, str(idx)+'.jpg'), mode='wb') as f:
+                await f.write(image_file)
+        else:
+            print(f'fail to download {folder_name} page {idx}.')
+            os._exit(-1)
+
+
+def download(page):
     folder_name, image_src, idx = page
     print(f'downloading {folder_name} page {idx}')
     try:
@@ -118,7 +146,7 @@ async def produce(chapter_queue, page_queue, browser_list):
         chapter_url, folder_name = chapter
         page_list = []
         if os.path.exists(folder_name) and os.path.exists(os.path.join(folder_name, '.incomplete')):
-            page_list = get_local_download_list(folder_name)
+            await get_local_download_list(folder_name, page_queue)
 
         else:
 
@@ -126,16 +154,17 @@ async def produce(chapter_queue, page_queue, browser_list):
             if browser_list:
                 browser = browser_list.pop()
             else:
-                browser = await initiate_bowser()
+                browser = initiate_bowser()
             browser_list.append(browser)
 
-            page_list = await get_online_download_list(
+            page_list = get_online_download_list(
                 folder_name, chapter_url, browser)
-        if page_list:
-            for page in page_list:
-                await page_queue.put(page)
-                print(f'add {page[0]} page {page[2]}.')
-                await asyncio.sleep(0.01)
+            if page_list:
+                print(f'adding {folder_name}..')
+                for page in page_list:
+                    await page_queue.put(page)
+
+            # await asyncio.sleep(0.001)
 
         chapter_queue.task_done()
 
@@ -143,41 +172,39 @@ async def produce(chapter_queue, page_queue, browser_list):
 async def consume(page_queue):
     while True:
         page = await page_queue.get()
-        await download(page)
-        # await asyncio.sleep(5)
+        await aiodownload(page)
+        # await asyncio.sleep(0.01)
         page_queue.task_done()
 
 
 async def get_chapter(chapter_queue):
+    await chapter_queue.put(['https://www.manhuafen.com/comic/39/18771.html', os.path.join('进击的巨人漫画', '87话')])
+    await chapter_queue.put(['https://www.manhuafen.com/comic/39/18772.html', os.path.join('进击的巨人漫画', '88话')])
+    await chapter_queue.put(['https://www.manhuafen.com/comic/39/18773.html', os.path.join('进击的巨人漫画', '89话')])
     await chapter_queue.put(['https://www.manhuafen.com/comic/39/18774.html', os.path.join('进击的巨人漫画', '90话')])
     await chapter_queue.put(['https://www.manhuafen.com/comic/39/18775.html', os.path.join('进击的巨人漫画', '91话')])
     await chapter_queue.put(['https://www.manhuafen.com/comic/39/18776.html', os.path.join('进击的巨人漫画', '92话')])
-    await chapter_queue.put(['https://www.manhuafen.com/comic/39/18777.html', os.path.join('进击的巨人漫画', '93话')])
-    await chapter_queue.put(['https://www.manhuafen.com/comic/39/18778.html', os.path.join('进击的巨人漫画', '94话')])
+    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18777.html', os.path.join('进击的巨人漫画', '93话')])
+    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18778.html', os.path.join('进击的巨人漫画', '94话')])
 
 
 async def run():
     chapter_queue = asyncio.Queue()
 
-    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18774.html', os.path.join('进击的巨人漫画', '90话')])
-    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18775.html', os.path.join('进击的巨人漫画', '91话')])
-    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18776.html', os.path.join('进击的巨人漫画', '92话')])
-    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18777.html', os.path.join('进击的巨人漫画', '93话')])
-    # await chapter_queue.put(['https://www.manhuafen.com/comic/39/18778.html', os.path.join('进击的巨人漫画', '94话')])
-
     page_queue = asyncio.Queue()
     driver_list = []
     # schedule the consumer
-    consumer_n = 3
-    consumers = []
+    consumer_n = 4
+    tasks = []
     for i in range(consumer_n):
-        consumers.append(asyncio.ensure_future(consume(page_queue)))
+        task = asyncio.create_task(consume(page_queue))
+        tasks.append(task)
 
     # run the producer and wait for completion
     # producer = asyncio.ensure_future(
-    
-    producer = asyncio.ensure_future(
-        produce(chapter_queue, page_queue, driver_list))
+
+    tasks.append(asyncio.create_task(
+        produce(chapter_queue, page_queue, driver_list)))
     await get_chapter(chapter_queue)
     # wait until the consumer has processed all items
 
@@ -185,17 +212,24 @@ async def run():
     await chapter_queue.join()
     # the consumer is still awaiting for an item, cancel it
     await page_queue.join()
-    producer.cancel()
-    for consumer in consumers:
-        consumer.cancel()  # run the producer and wait for completion
+
+    for task in tasks:
+        task.cancel()  # run the producer and wait for completion
 
     if driver_list:
         for driver in driver_list:
             driver.quit()
 
 
+@stopwatch
+def main():
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
-    loop.close()
+    main()
+
+    # loop = asyncio.get_event_loop()
+    # loop.run_until_complete(run())
+    # loop.close()

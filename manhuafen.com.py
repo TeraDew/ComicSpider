@@ -177,7 +177,6 @@ class Producer(threading.Thread):
 
 
 def get_content_urllib(url):
-    domain_url = 'https://www.manhuafen.com'
     print('parsing content...')
     html = urllib.request.urlopen(url)
     soup = BeautifulSoup(html.read(), "html.parser")
@@ -191,7 +190,7 @@ def get_content_urllib(url):
     for chapter in chapter_list:
         chapter_name = chapter.text.strip()
         folder_name = os.path.join(comic_name, chapter_name)
-        chapter_url = urljoin(domain_url, chapter.parent.get('href'))
+        chapter_url = urljoin(url, chapter.parent.get('href'))
         task_list.append([chapter_url, 0, folder_name])
     print(f'{comic_name} content parsing complete.')
     return task_list

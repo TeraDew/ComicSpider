@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 import urllib.request
 from urllib.parse import urljoin, urlparse
 import os
+import sys
 import threading
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -184,6 +185,10 @@ def get_content_urllib(url):
     chapter_list = soup.findAll('span', {'class': 'list_con_zj'})
     comic_name = soup.title.text.split(
         '-')[0] if len(soup.title.text.split('-')) > 1 else soup.title.text
+    if ',' in comic_name:
+        comic_name = comic_name.split(',')[0]
+    if '漫画' in comic_name:
+        comic_name = comic_name.split('漫画')[0]
     if not os.path.exists(comic_name):
         os.mkdir(comic_name)
     task_list = []
@@ -234,11 +239,16 @@ def main(full_task_list,
          url='https://www.manhuafen.com/comic/39',
          producer_number=1
          ):
-
+    if url.isdigit():
+        url = 'https://www.manhuafen.com/comic/'+url
     if not full_task_list:
         full_task_list = get_content_urllib(url)
     range_start, range_end = download_range
-    if range_start < 0:
+
+    range_start = int(range_start)
+    range_end = int(range_end)
+
+    if range_start <= 0:
         range_start = len(full_task_list)+range_start
     if 0 >= range_end:
         range_end = len(full_task_list)+range_end
@@ -248,7 +258,7 @@ def main(full_task_list,
     if not task_list:
         print('input invalid range.')
         return
-    
+
     online_q = queue.Queue()
     src_q = queue.Queue()
 
@@ -288,5 +298,7 @@ def main(full_task_list,
 
 
 if __name__ == "__main__":
-
-    user_interface()
+    if len(sys.argv) == 4:
+        main([], (sys.argv[2], sys.argv[3]), sys.argv[1])
+    else:
+        user_interface()

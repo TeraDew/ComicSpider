@@ -25,13 +25,36 @@ http://npm.taobao.org/mirrors/chromedriver/
 https://github.com/mozilla/geckodriver/releases
 ```
 ## 使用方式
+### 交互模式
 在命令行内切换到该目录，输入
 ```sh
 python3 manhuafen.com.py
 ```
 按照提示，依次输入
-- 漫画目录url：形如 ```https://www.manhuafen.com/comic/1```
-- 浏览器：Chrome 或 Firefox
-- 线程数：推荐值为 ```RAM(gb)×2``` 。资源主要消耗于浏览器渲染，一个线程大致等同于一个标签页
+- 漫画目录url：形如 ```https://www.manhuafen.com/comic/1``` 或直接输入 ```1```
+- 下载模式：下载全部章节直接按回车，下载部分章节输入1
+- 下载起点和下载终点：0表示最后一章，负值 ```-n``` 表示倒数第```n+1```章。例如输入```0```，```0```表示只下载最后一章。如果上一步选择下载全部章节则没有这一步。
+### 无交互模式
+
+```sh
+python3 manhuafen.com.py url chapter_start chapter_end
+```
+```url```：漫画目录网址
+
+```chapter_start```：下载起点
+
+```chapter_end ```:下载终点
+
+下载漫画的最后5章：
+```sh
+python3 manhuafen.com.py https://www.manhuafen.com/comic/1 -4 0
+```
+
 
 运行过程中按 ```ctrl + c``` 退出。下载同一部漫画时自动断点续传。
+
+## 2020-10-14 更新：
+
+- 新增无交互模式；
+
+- 兼容[漫画呗](https://www.manhuabei.com/)。

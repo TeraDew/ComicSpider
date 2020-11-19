@@ -266,8 +266,9 @@ def main(full_task_list,
 
     unparsed_chapter_list = [[chapter_url, idx, folder_name] for chapter_url,
                              idx, folder_name in task_list if not os.path.exists(folder_name)]
-    producer_number = producer_number if producer_number < len(
-        unparsed_chapter_list) and len(unparsed_chapter_list) > 0 else len(unparsed_chapter_list)
+    if producer_number > len(
+            unparsed_chapter_list) and len(unparsed_chapter_list) > 0:
+        producer_number = len(unparsed_chapter_list)
 
     for task in task_list:
         online_q.put(task)
@@ -278,9 +279,9 @@ def main(full_task_list,
         threads.append(producer)
 
     threads.append(Consumer('Consumer1', src_q))
-    threads.append(Consumer('Consumer2', src_q))
-    threads.append(Consumer('Consumer3', src_q))
-    threads.append(Consumer('Consumer4', src_q))
+    # threads.append(Consumer('Consumer2', src_q))
+    # threads.append(Consumer('Consumer3', src_q))
+    # threads.append(Consumer('Consumer4', src_q))
 
     for td in threads:
         td.start()
